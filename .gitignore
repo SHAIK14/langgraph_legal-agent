@@ -1,0 +1,24 @@
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Environment Variables (IMPORTANT - has your API keys!)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ChromaDB (vector database storage)
+chroma_db/
+*.db
+
+# IDE
+.vscode/
+.idea/
+
+# macOS
+.DS_Store

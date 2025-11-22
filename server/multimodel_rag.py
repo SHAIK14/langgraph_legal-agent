@@ -6,6 +6,9 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.vectorstores.utils import filter_complex_metadata
 from langchain_core.messages import HumanMessage
+from langchain_core.prompts import ChatPromptTemplate
+
+from langchain_community.retrievers import BM25Retriever
 
 load_dotenv()
 
@@ -155,6 +158,7 @@ print(f"\n📊 Tables: {total_tables}, Images: {total_images}")
 # Store in ChromaDB
 print(f"\n💾 Storing in ChromaDB...")
 embeddings = OpenAIEmbeddings()
+query = "What is the Transformer architecture?"
 
 # Filter out complex metadata (lists, dicts, etc.)
 filtered_docs = filter_complex_metadata(documents)
@@ -164,20 +168,69 @@ vectorstore = Chroma.from_documents(
     embedding=embeddings,
     persist_directory="./chroma_multimodal_db"
 )
-print(f"✅ Stored!")
+
 
 # Query
-print(f"\n🔍 Testing query...")
 query = "What is the Transformer architecture?"
-results = vectorstore.similarity_search(query, k=3)
 
-print(f"\nQuery: {query}\nRetrieved {len(results)} chunks\n")
+print(f"\n🔍 Hybrid Search Query: {query}\n")
+
+# Create retrievers
+keyword_retriever = BM25Retriever.from_documents(filtered_docs)
+keyword_retriever.k = 3
+
+semantic_retriever = vectorstore.as_retriever(search_kwargs={"k": 3})
+
+# Manual hybrid search
+print("Retrieving from keyword search...")
+keyword_results = keyword_retriever.invoke(query)
+print(f"  Found {len(keyword_results)} results")
+
+print("Retrieving from semantic search...")
+semantic_results = semantic_retriever.invoke(query)
+print(f"  Found {len(semantic_results)} results")
+
+# Combine and deduplicate
+seen_ids = set()
+hybrid_results = []
+
+for doc in keyword_results:
+    doc_id = id(doc.page_content)
+    if doc_id not in seen_ids:
+        seen_ids.add(doc_id)
+        hybrid_results.append(doc)
+
+for doc in semantic_results:
+    doc_id = id(doc.page_content)
+    if doc_id not in seen_ids:
+        seen_ids.add(doc_id)
+        hybrid_results.append(doc)
+
+results = hybrid_results[:3]  # Top 3
+
+print(f"\n📊 Combined {len(hybrid_results)} unique results, using top {len(results)}\n")
 
 # Generate answer
 context = "\n\n".join([doc.page_content for doc in results])
-prompt = f"Context:\n{context}\n\nQuestion: {query}\n\nAnswer:"
-answer = model.invoke(prompt)
-print(f"\n✅ Answer:\n{answer.content}\n")
+
+
+prompt_template = ChatPromptTemplate.from_messages([
+    ("system", "You are a helpful assistant that can answer questions about the paper."),
+    ("human", "{context}\n\nQuestion: {question}")
+])
+
+prompt = prompt_template.invoke({"context": context, "question": query})
+
+response = model.invoke(prompt)
+
+
+print(f"\n✅ Hybrid Search Answer:\n{response.content}\n")
+
+
+
+
+
+
 
 
 
